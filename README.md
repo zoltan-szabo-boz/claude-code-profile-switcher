@@ -83,8 +83,14 @@ Right-click your launcher `.vbs` file → **Create shortcut** → move to Deskto
 
 - The profile detection reads `settings.json` and searches for the `detect` string. Put something unique in each profile's settings (Bedrock profiles naturally have `CLAUDE_CODE_USE_BEDROCK`; for others, add a comment or unused key).
 - The VS Code close is graceful first (`taskkill`), with a force-kill fallback after 10 seconds.
+- Before the swap, the launcher also runs `taskkill /f /t /im claude.exe`. Killing `Code.exe` alone leaves the integrated-terminal `claude` CLI and its `node` MCP/SSE children orphaned, and they keep open handles inside `.claude` — which makes the directory rename fail. The kill is scoped to `claude.exe` (not a blanket `node.exe` kill) so unrelated dev servers are left alone.
+- If the swap fails (e.g. a handle is still held), the launcher shows an error dialog and does **not** open VS Code, so you never silently land on the wrong profile. The rename itself also retries a few times, since handles can linger for about a second after a process exits.
 - Auth files (`.claude.json`) are swapped alongside the config directory so you stay logged in to each account.
 - Works with VS Code installed in the default user location. If your VS Code is elsewhere, edit the `vscode` path in `claude-switch-and-launch.vbs`.
+
+## Troubleshooting
+
+**Clicking a shortcut opens VS Code but the profile didn't change.** This was the classic failure before the `claude.exe` kill was added: orphaned `claude`/`node` processes held `.claude` open, the rename silently failed, and VS Code opened on the old profile anyway. If you still see it, check for stale processes with `Get-Process claude,node | Select Name,Id,StartTime` and confirm the parked directories are consistent (exactly one of `.claude` / `.claude-<name>` per profile). A failed swap now raises an error dialog instead of failing silently.
 
 ## License
 

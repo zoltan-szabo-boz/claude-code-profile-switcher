@@ -103,8 +103,28 @@ If procs.Count > 0 Then
     End If
 End If
 
-' --- Run the profile switch ---
-WshShell.Run """" & scriptDir & "claude-switch.bat"" " & profile, 0, True
+' --- Terminate lingering Claude CLI / MCP node children that lock ~/.claude ---
+' Code.exe (the editor) is killed above, but the integrated-terminal `claude` CLI and
+' its `node` MCP/SSE children are orphaned rather than terminated, and they keep open
+' handles inside ~/.claude. Any such handle makes the directory rename in
+' claude-switch.bat fail. Tree-kill claude.exe (/t takes its node descendants) so the
+' swap can proceed. claude.exe is specific to Claude Code, so this is safe; we avoid a
+' blanket `taskkill /im node.exe` that could hit unrelated dev servers.
+WshShell.Run "taskkill /f /t /im claude.exe", 0, True
+WScript.Sleep 1500
+
+' --- Run the profile switch and CHECK its exit code ---
+' A failed swap returns non-zero. Previously the code was discarded and VS Code launched
+' anyway, silently dropping the user back on the old profile. Surface it instead.
+rc = WshShell.Run("""" & scriptDir & "claude-switch.bat"" " & profile, 0, True)
+If rc <> 0 Then
+    MsgBox "Profile switch FAILED (claude-switch.bat exit code " & rc & ")." & vbCrLf & vbCrLf _
+        & "The ~/.claude directory could not be swapped - it is most likely still locked " _
+        & "by a running claude/node process. VS Code was NOT launched so you don't land on " _
+        & "the wrong profile without knowing." & vbCrLf & vbCrLf _
+        & "Close any running Claude sessions and try again.", vbCritical, "Claude Profile Switch"
+    WScript.Quit rc
+End If
 
 ' --- Launch VS Code ---
 WshShell.Run """" & vscode & """ """ & workspace & """", 1, False

@@ -81,7 +81,7 @@ if exist "%CLAUDE_DIR%" (
         echo ERROR: Both .claude and .claude-!OTHER! exist. Manual intervention needed.
         exit /b 2
     )
-    ren "%CLAUDE_DIR%" .claude-!OTHER!
+    call :ren_retry "%CLAUDE_DIR%" ".claude-!OTHER!"
     if errorlevel 1 (
         echo ERROR: Failed to rename .claude to .claude-!OTHER!. Files may be locked.
         exit /b 3
@@ -91,7 +91,7 @@ if exist "%CLAUDE_DIR%" (
 rem --- Activate target profile ---
 set "TARGET_DIR=%HOME%\.claude-!PROFILE!"
 if exist "!TARGET_DIR!" (
-    ren "!TARGET_DIR!" .claude
+    call :ren_retry "!TARGET_DIR!" ".claude"
     if errorlevel 1 (
         echo ERROR: Failed to rename .claude-!PROFILE! to .claude.
         exit /b 3
@@ -117,3 +117,21 @@ if exist "%HOME%\.claude.json.backup.!PROFILE!" (
 
 echo Switched to %PROFILE% profile.
 exit /b 0
+
+rem --- Retry a directory rename: handles can linger ~1s after a process exits ---
+rem %1 = full source path, %2 = target name (same parent). Returns 0 on success, 1 on failure.
+rem Success is verified by the target existing and the source being gone (ren's errorlevel
+rem is unreliable for locked directories).
+:ren_retry
+setlocal EnableDelayedExpansion
+set "SRC=%~1"
+set "DST=%~2"
+set "DSTFULL=%~dp1%~2"
+set /a _tries=0
+:ren_retry_loop
+ren "!SRC!" "!DST!" 2>nul
+if exist "!DSTFULL!" if not exist "!SRC!" ( endlocal & exit /b 0 )
+set /a _tries+=1
+if !_tries! geq 5 ( endlocal & exit /b 1 )
+ping -n 2 127.0.0.1 >nul
+goto ren_retry_loop
